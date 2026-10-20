@@ -1,0 +1,1471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#05070b" />
+<meta name="description" content="Infinite Conway's Game of Life engine rendered with the 81 Tai Xuan Jing tetragrams (U+1D306–U+1D356) mapped continuously across void density." />
+<title>Tetralife — Infinite Tai Xuan Jing Life Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;600&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --bg-void: #05070b;
+    --panel-bg: rgba(10, 14, 22, 0.78);
+    --panel-border: rgba(255, 255, 255, 0.09);
+    --accent-core: #38ef7d;
+    --accent-glow: rgba(56, 239, 125, 0.35);
+    --accent-gold: #f5c469;
+    --text-primary: #f2f5fb;
+    --text-secondary: #8c99ae;
+    --text-dim: #546073;
+    --font-ui: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-kanji: 'Noto Serif SC', serif;
+    /* Elevated baseline to guarantee controls never clip or fall off canvas */
+    --dock-bottom: max(32px, calc(env(safe-area-inset-bottom, 0px) + 24px));
+  }
+
+  /* Themes */
+  body[data-theme="xuan"] {
+    --bg-void: #030509;
+    --panel-bg: rgba(7, 11, 19, 0.82);
+    --accent-core: #4ef2bb;
+    --accent-glow: rgba(78, 242, 187, 0.35);
+    --accent-gold: #f6c878;
+  }
+  body[data-theme="bronze"] {
+    --bg-void: #0a0806;
+    --panel-bg: rgba(20, 16, 12, 0.85);
+    --accent-core: #e6a756;
+    --accent-glow: rgba(230, 167, 86, 0.4);
+    --accent-gold: #ffd480;
+  }
+  body[data-theme="jade"] {
+    --bg-void: #020906;
+    --panel-bg: rgba(4, 18, 12, 0.84);
+    --accent-core: #00f59b;
+    --accent-glow: rgba(0, 245, 155, 0.35);
+    --accent-gold: #73f7c4;
+  }
+  body[data-theme="stele"] {
+    --bg-void: #080808;
+    --panel-bg: rgba(18, 18, 18, 0.88);
+    --accent-core: #e0e0e0;
+    --accent-glow: rgba(240, 240, 240, 0.25);
+    --accent-gold: #ffffff;
+  }
+  body[data-theme="cinnabar"] {
+    --bg-void: #0c0505;
+    --panel-bg: rgba(22, 10, 10, 0.85);
+    --accent-core: #ff5252;
+    --accent-glow: rgba(255, 82, 82, 0.4);
+    --accent-gold: #ffab40;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    min-height: -webkit-fill-available;
+    margin: 0; padding: 0;
+    overflow: hidden; background: var(--bg-void);
+    color: var(--text-primary); font-family: var(--font-ui);
+    user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+
+  #viewport {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    display: block; cursor: crosshair; z-index: 1;
+  }
+  body.tool-pan #viewport { cursor: grab; }
+  body.tool-pan-active #viewport { cursor: grabbing; }
+
+  /* Glassmorphism Surface Base */
+  .hud-surface {
+    position: absolute; z-index: 20;
+    background: var(--panel-bg);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transition: opacity 0.22s ease, transform 0.22s ease, border-color 0.2s ease;
+  }
+
+  /* Top HUD Bar */
+  .hud-top {
+    top: max(12px, env(safe-area-inset-top));
+    left: 14px; right: 14px;
+    padding: 10px 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; pointer-events: none;
+  }
+  .hud-top > * { pointer-events: auto; }
+
+  .brand-group {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .brand-symbol {
+    width: 32px; height: 32px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent-gold), var(--accent-core));
+    display: flex; align-items: center; justify-content: center;
+    color: #06080d; font-family: var(--font-kanji); font-size: 1.15rem;
+    font-weight: 700; box-shadow: 0 0 16px var(--accent-glow);
+    flex-shrink: 0;
+  }
+  .brand-title { display: flex; flex-direction: column; }
+  .brand-title h1 {
+    margin: 0; font-size: 1.18rem; font-weight: 700;
+    letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px;
+    color: #fff;
+  }
+  .brand-title span.philosophy {
+    font-size: 0.68rem; color: var(--text-secondary);
+    letter-spacing: 0.03em; margin-top: 1px;
+  }
+
+  /* Stat Cluster */
+  .stats-cluster {
+    display: flex; align-items: center; gap: 18px;
+  }
+  .stat-unit { display: flex; flex-direction: column; }
+  .stat-tag {
+    font-size: 0.6rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--text-secondary);
+  }
+  .stat-data {
+    font-family: var(--font-mono); font-size: 0.95rem; font-weight: 600;
+    color: var(--accent-gold); letter-spacing: -0.02em;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .pulsar-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent-core); box-shadow: 0 0 8px var(--accent-core);
+    display: inline-block;
+  }
+  .pulsar-dot.paused { background: var(--text-dim); box-shadow: none; }
+
+  /* Hover / Touch Glyph Inspector */
+  .inspector-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 6px 14px; background: rgba(255, 255, 255, 0.04);
+    border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.06);
+    min-width: 250px;
+  }
+  .inspector-glyph {
+    font-size: 1.75rem; line-height: 1; min-width: 34px;
+    text-align: center; color: var(--accent-gold);
+    filter: drop-shadow(0 0 8px var(--accent-glow));
+    font-family: 'Noto Sans Symbols 2', sans-serif;
+  }
+  .inspector-details {
+    display: flex; flex-direction: column; font-size: 0.72rem;
+  }
+  .inspector-name {
+    font-weight: 600; color: #fff; display: flex; align-items: center; gap: 6px;
+  }
+  .inspector-name .kanji {
+    font-family: var(--font-kanji); color: var(--accent-gold); font-size: 0.95rem;
+  }
+  .inspector-trits {
+    font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-secondary);
+    margin-top: 2px;
+  }
+
+  /* Bottom Control Dock */
+  .hud-dock-wrapper {
+    position: absolute;
+    bottom: var(--dock-bottom);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    z-index: 25;
+    width: calc(100% - 32px);
+    max-width: 1040px;
+    pointer-events: none;
+    filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.6));
+  }
+  .hud-dock-wrapper > * { pointer-events: auto; }
+
+  /* 81 Glyph Luminance Ramp Bar */
+  .ramp-drawer {
+    width: 100%; padding: 6px 12px;
+    display: flex; flex-direction: column; gap: 4px;
+    border-radius: 12px;
+  }
+  .ramp-canvas-wrap {
+    width: 100%; height: 26px; position: relative;
+    border-radius: 6px; overflow: hidden;
+  }
+  #ramp-canvas {
+    width: 100%; height: 100%; display: block; cursor: pointer;
+  }
+  .ramp-meta {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.64rem; font-family: var(--font-mono); color: var(--text-secondary);
+  }
+
+  /* Main Interactive Dock */
+  .hud-dock {
+    width: 100%;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .hud-dock::-webkit-scrollbar { display: none; }
+
+  .dock-section {
+    display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  }
+  .dock-divider {
+    width: 1px; height: 24px; background: var(--panel-border);
+    margin: 0 4px; flex-shrink: 0;
+  }
+
+  /* Interactive Buttons & Inputs */
+  button, select {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-primary); border-radius: 9px;
+    padding: 7px 12px; font-family: var(--font-ui);
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 6px; white-space: nowrap; transition: all 0.16s ease;
+  }
+  button:hover, select:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff; transform: translateY(-1px);
+  }
+  button:active { transform: translateY(1px); }
+  button.active {
+    background: var(--accent-core); color: #05080e;
+    border-color: var(--accent-core);
+    box-shadow: 0 0 14px var(--accent-glow);
+  }
+  button.btn-accent {
+    background: var(--accent-gold); color: #0a0806;
+    border-color: var(--accent-gold);
+  }
+  button.danger:hover {
+    background: #ff4757; border-color: #ff4757; color: #fff;
+    box-shadow: 0 0 12px rgba(255, 71, 87, 0.4);
+  }
+
+  select {
+    outline: none; -webkit-appearance: none; appearance: none;
+    padding-right: 26px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238c99ae' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+  select option { background: #0c1018; color: #fff; }
+
+  .control-slider {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 0 6px; font-size: 0.72rem; color: var(--text-secondary);
+  }
+  .control-slider span.val {
+    font-family: var(--font-mono); color: #fff; min-width: 28px;
+  }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 68px; height: 4px; border-radius: 2px;
+    background: rgba(255, 255, 255, 0.16); outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--accent-gold); cursor: pointer;
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+
+  /* Audio Pill */
+  #btn-sound.muted svg { opacity: 0.45; }
+
+  /* Responsive Adjustments */
+  @media (max-height: 600px) {
+    :root {
+      /* Compact safe margin in landscape phones to maintain vertical canvas clearance */
+      --dock-bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 12px));
+    }
+    .hud-top {
+      padding: 6px 12px;
+    }
+    .brand-title span.philosophy {
+      display: none;
+    }
+    .ramp-drawer {
+      display: none !important;
+    }
+    .hud-dock {
+      padding: 5px 8px;
+      gap: 5px;
+    }
+    button, select {
+      padding: 5px 8px;
+      font-size: 0.74rem;
+    }
+  }
+
+  @media (max-width: 960px) {
+    .inspector-card { display: none; }
+    .hud-top { padding: 8px 12px; }
+    .ramp-meta span:last-child { display: none; }
+    input[type="range"] { width: 52px; }
+  }
+  @media (max-width: 640px) {
+    :root {
+      --dock-bottom: max(22px, calc(env(safe-area-inset-bottom, 0px) + 16px));
+    }
+    .stat-unit:nth-child(3), .stat-unit:nth-child(4) { display: none; }
+    .brand-title span.philosophy { display: none; }
+    .ramp-drawer { display: none; }
+    .hud-dock { padding: 6px 8px; gap: 4px; }
+    button, select { padding: 6px 9px; font-size: 0.74rem; }
+  }
+</style>
+</head>
+<body data-theme="xuan">
+
+<canvas id="viewport"></canvas>
+
+<!-- Top Status Overlay -->
+<header class="hud-surface hud-top">
+  <div class="brand-group">
+    <div class="brand-symbol" title="玄 (Xuán) — Primordial Mystery">玄</div>
+    <div class="brand-title">
+      <h1>Tetralife <span style="font-size:0.75rem; font-weight:400; color:var(--text-secondary); font-family:var(--font-mono);">81-TETRA</span></h1>
+      <span class="philosophy">玄之又玄，眾妙之門 · The Gateway of Subtle Wonders</span>
+    </div>
+  </div>
+
+  <div class="stats-cluster">
+    <div class="stat-unit">
+      <span class="stat-tag">Generation</span>
+      <div class="stat-data"><span class="pulsar-dot" id="sim-indicator"></span><span id="stat-gen">0</span></div>
+    </div>
+    <div class="stat-unit">
+      <span class="stat-tag">Living / Mass</span>
+      <div class="stat-data" id="stat-pop">0</div>
+    </div>
+    <div class="stat-unit">
+      <span class="stat-tag">Zoom Scale</span>
+      <div class="stat-data" id="stat-zoom">100%</div>
+    </div>
+    <div class="stat-unit">
+      <span class="stat-tag">Frame Rate</span>
+      <div class="stat-data" id="stat-fps">60 FPS</div>
+    </div>
+  </div>
+
+  <div class="inspector-card" id="inspector">
+    <div class="inspector-glyph" id="insp-glyph">𝌆</div>
+    <div class="inspector-details">
+      <div class="inspector-name">
+        <span class="kanji" id="insp-kanji">中</span>
+        <span id="insp-name">Centre</span>
+        <span style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-secondary);" id="insp-unicode">U+1D306</span>
+      </div>
+      <div class="inspector-trits" id="insp-desc">Rank 1/81 · Void 0.000 · 0000</div>
+    </div>
+  </div>
+</header>
+
+<!-- Bottom Dock Controls -->
+<div class="hud-dock-wrapper">
+  <!-- 81 Tetragram Luminance Ramp Spectrum -->
+  <div class="hud-surface ramp-drawer">
+    <div class="ramp-canvas-wrap">
+      <canvas id="ramp-canvas" height="26"></canvas>
+    </div>
+    <div class="ramp-meta">
+      <span>𝌆 0000 · Solid Light (中 Centre)</span>
+      <span>Tai Xuan Jing 81 Tetragram Void Ramp</span>
+      <span>𝍖 2222 · Obscure Void (養 Fostering)</span>
+    </div>
+  </div>
+
+  <!-- Command Dock -->
+  <footer class="hud-surface hud-dock">
+    <div class="dock-section">
+      <button id="btn-play" class="btn-accent" title="Space to toggle play">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor"><path d="M3 2l9 5-9 5z"/></svg>
+        <span>Play</span>
+      </button>
+      <button id="btn-step" title="Advance one step (key: .)">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor"><path d="M2 2h2v10H2zm4 0l6 5-6 5z"/></svg>
+        <span>Step</span>
+      </button>
+    </div>
+
+    <div class="dock-divider"></div>
+
+    <div class="dock-section">
+      <select id="select-preset" title="Load canonical cellular automata patterns">
+        <option value="" disabled selected>Presets...</option>
+        <option value="gosper">Gosper Glider Gun</option>
+        <option value="simkin">Simkin Glider Gun</option>
+        <option value="pulsar">Pulsar Oscillator</option>
+        <option value="pentadecathlon">Pentadecathlon</option>
+        <option value="queenbee">Queen Bee Shuttle</option>
+        <option value="lwss">LWSS Cruiser</option>
+        <option value="glider">Single Glider</option>
+        <option value="acorn">Acorn (Methuselah)</option>
+        <option value="rpent">R-Pentomino</option>
+        <option value="diehard">Diehard</option>
+      </select>
+
+      <select id="select-rule" title="Automata Transition Rules">
+        <option value="b3s23" selected>Conway (B3/S23)</option>
+        <option value="highlife">HighLife (B36/S23)</option>
+        <option value="seeds">Seeds (B2/S)</option>
+        <option value="daynight">Day & Night</option>
+        <option value="crystallize">Crystallize (Life-Death)</option>
+      </select>
+    </div>
+
+    <div class="dock-divider"></div>
+
+    <div class="dock-section">
+      <button id="tool-draw" class="active" title="Draw living cells (D)">Draw</button>
+      <button id="tool-erase" title="Erase cells (E)">Erase</button>
+      <button id="tool-pan" title="Pan infinite canvas (P / Drag)">Pan</button>
+      
+      <div class="control-slider" title="Brush Radius">
+        <span>Rad</span>
+        <input type="range" id="slider-brush" min="1" max="6" value="1" />
+        <span class="val" id="val-brush">1</span>
+      </div>
+    </div>
+
+    <div class="dock-divider"></div>
+
+    <div class="dock-section">
+      <div class="control-slider" title="Simulation Speed">
+        <span>Spd</span>
+        <input type="range" id="slider-speed" min="1" max="50" value="16" />
+        <span class="val" id="val-speed">16</span>
+      </div>
+      <button id="btn-wrap" class="active" title="Toroidal grid edge wrapping">Wrap</button>
+      <button id="btn-fit" title="Fit grid to screen (F)">Fit</button>
+    </div>
+
+    <div class="dock-divider"></div>
+
+    <div class="dock-section">
+      <select id="select-theme" title="Visual Luminance Theme">
+        <option value="xuan" selected>玄 Xuán (Void)</option>
+        <option value="bronze">太玄 Bronze</option>
+        <option value="jade">翡翠 Jade</option>
+        <option value="stele">碑拓 Stone Stele</option>
+        <option value="cinnabar">丹砂 Cinnabar</option>
+      </select>
+
+      <button id="btn-sound" class="muted" title="Harmonic Pentatonic Soundscape">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+      </button>
+
+      <button id="btn-random" title="Seed random noise (R)">Noise</button>
+      <button id="btn-clear" class="danger" title="Clear all life (C)">Clear</button>
+    </div>
+  </footer>
+</div>
+
+<script>
+/**
+ * TAI XUAN JING (太玄經) MATHEMATICAL COSMOLOGY & PHENOMENOLOGICAL SORTING
+ */
+const KANJI = [
+  "中","周","礥","閑","少","戾","上","干","𢓸","羨",
+  "差","童","增","銳","達","交","䎡","傒","從","進",
+  "釋","格","夷","樂","爭","務","事","更","斷","毅",
+  "裝","衆","密","親","斂","彊","睟","盛","居","法",
+  "應","迎","遇","竈","大","廓","文","禮","逃","唐",
+  "常","度","永","昆","減","唫","守","翕","聚","積",
+  "飾","疑","視","沈","內","去","晦","瞢","窮","割",
+  "止","堅","成","䦯","失","劇","馴","將","難","勤",
+  "養"
+];
+
+const NAMES = [
+  "Centre","Full Circle","Mired","Barrier","Keeping Small","Contrariety","Ascent","Opposition","Branching Out","Defectiveness",
+  "Divergence","Youthfulness","Increase","Penetration","Reach","Contact","Holding Back","Waiting","Following","Advance",
+  "Release","Resistance","Ease","Joy","Contention","Endeavour","Duties","Change","Decisiveness","Bold Resolution",
+  "Packing","Legion","Closeness","Kinship","Gathering","Strength","Purity","Fullness","Residence","Law",
+  "Response","Going to Meet","Encounters","Stove","Greatness","Enlargement","Pattern","Ritual","Flight","Vastness",
+  "Constancy","Measure","Eternity","Unity","Diminishment","Closed Mouth","Guardedness","Gathering In","Massing","Accumulation",
+  "Embellishment","Doubt","Watch","Sinking","Inner","Departure","Darkening","Dimming","Exhaustion","Severance",
+  "Stoppage","Hardness","Completion","Closure","Failure","Aggravation","Compliance","On the Verge","Difficulties","Labouring",
+  "Fostering"
+];
+
+// Top-heavy structural void weighting
+const TIER_WEIGHTS = [1.00, 0.95, 0.90, 0.85];
+const TRIT_VOID = [0.0, 0.5, 1.0]; // 0: Unbroken solid, 1: Once-broken, 2: Twice-broken
+const TRITS = [];
+const VOID_OF = new Float32Array(81);
+const GLYPHS = [];
+
+for (let i = 0; i < 81; i++) {
+  const jia = i % 3;
+  const bu = Math.floor(i / 3) % 3;
+  const zhou = Math.floor(i / 9) % 3;
+  const fang = Math.floor(i / 27) % 3;
+  const t = [fang, zhou, bu, jia];
+  TRITS.push(t);
+  let weightedVoid = 0;
+  for (let k = 0; k < 4; k++) weightedVoid += TIER_WEIGHTS[k] * TRIT_VOID[t[k]];
+  VOID_OF[i] = weightedVoid / 3.70;
+  GLYPHS.push(String.fromCodePoint(0x1D306 + i));
+}
+
+function countTrits(t, val) {
+  let c = 0;
+  for (let i = 0; i < 4; i++) if (t[i] === val) c++;
+  return c;
+}
+
+// Rigorous 81-step brightness ordering: void density -> trit sum -> twos count -> ones count -> lexicographic
+const ORDER = [...Array(81).keys()].sort((a, b) => {
+  const dv = VOID_OF[a] - VOID_OF[b];
+  if (Math.abs(dv) > 1e-6) return dv;
+  const sa = TRITS[a][0] + TRITS[a][1] + TRITS[a][2] + TRITS[a][3];
+  const sb = TRITS[b][0] + TRITS[b][1] + TRITS[b][2] + TRITS[b][3];
+  if (sa !== sb) return sa - sb;
+  const d2 = countTrits(TRITS[b], 2) - countTrits(TRITS[a], 2);
+  if (d2 !== 0) return d2;
+  const d1 = countTrits(TRITS[a], 1) - countTrits(TRITS[b], 1);
+  if (d1 !== 0) return d1;
+  return TRITS[a].join("").localeCompare(TRITS[b].join(""));
+});
+
+const RANK = new Uint8Array(81);
+ORDER.forEach((code, r) => { RANK[code] = r; });
+
+// 4x4 Spatial Bayer Dither Matrix for micro-texture gradient dithering
+const BAYER4 = [
+  [ 0,  8,  2, 10],
+  [12,  4, 14,  6],
+  [ 3, 11,  1,  9],
+  [15,  7, 13,  5]
+];
+
+/**
+ * CELLULAR AUTOMATON SIMULATION FIELD
+ */
+const COLS = 160;
+const ROWS = 96;
+const CELL_COUNT = COLS * ROWS;
+
+let grid = new Uint8Array(CELL_COUNT);
+let gridNext = new Uint8Array(CELL_COUNT);
+let age = new Uint16Array(CELL_COUNT);
+let decay = new Float32Array(CELL_COUNT);
+let nbrs = new Uint8Array(CELL_COUNT);
+
+let isRunning = false;
+let wrap = true;
+let currentRule = "b3s23";
+let genCount = 0;
+let popCount = 0;
+let simSpeed = 16;
+let brushRad = 1;
+let activeTool = "draw";
+let currentTheme = "xuan";
+
+/**
+ * WEBAUDIO PENTATONIC HARMONIC GENERATOR
+ */
+class SoundEngine {
+  constructor() {
+    this.ctx = null;
+    this.enabled = false;
+    // Ancient Chinese Pentatonic Scale (Gong, Shang, Jiao, Zhi, Yu in multiple octaves)
+    this.frequencies = [
+      130.81, 146.83, 164.81, 196.00, 220.00,
+      261.63, 293.66, 329.63, 392.00, 440.00,
+      523.25, 587.33, 659.25, 783.99, 880.00
+    ];
+  }
+  init() {
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AudioCtx();
+    }
+    if (this.ctx.state === "suspended") {
+      this.ctx.resume();
+    }
+  }
+  playCellChime(rank, volume = 0.05) {
+    if (!this.enabled || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    const freqIndex = Math.floor((1.0 - (rank / 80.0)) * (this.frequencies.length - 1));
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(this.frequencies[freqIndex] || 261.63, now);
+
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(volume, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.4);
+  }
+}
+const audio = new SoundEngine();
+
+/**
+ * HIGH-PERFORMANCE PROCEDURAL VECTOR & ATLAS GLYPH ENGINE
+ */
+class GlyphAtlas {
+  constructor() {
+    this.canvas = document.createElement("canvas");
+    this.ctx = this.canvas.getContext("2d", { alpha: true });
+    this.cachedSize = 0;
+    this.cachedTheme = "";
+    this.numGlyphs = 81;
+  }
+
+  build(size, theme) {
+    const s = Math.max(2, size);
+    if (this.cachedSize === s && this.cachedTheme === theme) return;
+    this.cachedSize = s;
+    this.cachedTheme = theme;
+
+    this.canvas.width = s * this.numGlyphs;
+    this.canvas.height = s;
+    this.ctx.clearRect(0, 0, this.canvas.width, s);
+
+    for (let r = 0; r < this.numGlyphs; r++) {
+      const code = ORDER[r];
+      const color = getStyleForRank(r, false, 0, theme);
+      drawVectorTetragram(this.ctx, code, r * s, 0, s, color);
+    }
+  }
+}
+const atlas = new GlyphAtlas();
+
+function drawVectorTetragram(targetCtx, code, ox, oy, size, color) {
+  const trits = TRITS[code];
+  const pad = Math.max(1, Math.floor(size * 0.12));
+  const w = size - pad * 2;
+  const slotH = size / 4;
+  const barH = Math.max(1, Math.floor(slotH * 0.46));
+
+  targetCtx.fillStyle = color;
+
+  for (let r = 0; r < 4; r++) {
+    const trit = trits[r];
+    const by = Math.floor(oy + r * slotH + (slotH - barH) / 2);
+    const bx = Math.floor(ox + pad);
+
+    if (trit === 0 || w < 5) {
+      // Unbroken solid stroke (0)
+      targetCtx.fillRect(bx, by, w, barH);
+    } else if (trit === 1 || w < 10) {
+      // Once-broken stroke (1)
+      const gap = Math.max(1, Math.floor(w * 0.18));
+      const segW = Math.floor((w - gap) / 2);
+      targetCtx.fillRect(bx, by, segW, barH);
+      targetCtx.fillRect(bx + w - segW, by, segW, barH);
+    } else {
+      // Twice-broken stroke (2)
+      const gap = Math.max(1, Math.floor(w * 0.11));
+      const segW = Math.floor((w - gap * 2) / 3);
+      targetCtx.fillRect(bx, by, segW, barH);
+      targetCtx.fillRect(bx + Math.floor((w - segW) / 2), by, segW, barH);
+      targetCtx.fillRect(bx + w - segW, by, segW, barH);
+    }
+  }
+}
+
+/**
+ * THEMATIC COLOR PALETTES & CONTINUOUS STATE-TO-SYMBOL MAPPING
+ */
+function getStyleForRank(rank, alive, cellAge, themeName) {
+  const norm = 1.0 - (rank / 80.0); // 1.0 = Brightest (Centre), 0.0 = Deepest Void (Fostering)
+
+  if (themeName === "xuan") {
+    if (alive) {
+      if (cellAge <= 1) return "#ffffff"; // Birth: blazing white-gold
+      const r = Math.round(78 + norm * 177);
+      const g = Math.round(242 - norm * 20);
+      const b = Math.round(187 + norm * 68);
+      return `rgb(${r},${g},${b})`;
+    }
+    // Deep void / decay phosphorescence
+    if (norm > 0.28) {
+      const g = Math.round(140 * norm + 20);
+      const b = Math.round(200 * norm + 35);
+      return `rgba(20,${g},${b},${0.35 + norm * 0.6})`;
+    }
+    const val = Math.round(18 + norm * 65);
+    return `rgba(${val},${val + 6},${val + 18},${0.12 + norm * 0.35})`;
+  }
+
+  if (themeName === "bronze") {
+    if (alive) {
+      if (cellAge <= 1) return "#fff6e0";
+      const r = Math.round(255 - (1 - norm) * 45);
+      const g = Math.round(195 * norm + 45);
+      const b = Math.round(90 * norm + 10);
+      return `rgb(${r},${g},${b})`;
+    }
+    if (norm > 0.25) {
+      const r = Math.round(180 * norm + 30);
+      const g = Math.round(110 * norm + 15);
+      return `rgba(${r},${g},20,${0.3 + norm * 0.65})`;
+    }
+    const v = Math.round(16 + norm * 60);
+    return `rgba(${v + 10},${v + 5},${v},${0.15 + norm * 0.35})`;
+  }
+
+  if (themeName === "jade") {
+    if (alive) {
+      if (cellAge <= 1) return "#e6fff6";
+      const g = Math.round(220 + norm * 35);
+      const b = Math.round(140 * norm + 50);
+      return `rgb(20,${g},${b})`;
+    }
+    if (norm > 0.25) {
+      const g = Math.round(190 * norm + 25);
+      return `rgba(10,${g},80,${0.3 + norm * 0.65})`;
+    }
+    const v = Math.round(12 + norm * 55);
+    return `rgba(${v},${v + 12},${v + 5},${0.15 + norm * 0.35})`;
+  }
+
+  if (themeName === "stele") {
+    if (alive) {
+      if (cellAge <= 1) return "#ffffff";
+      const v = Math.round(210 + norm * 45);
+      return `rgb(${v},${v},${v})`;
+    }
+    if (norm > 0.2) {
+      const v = Math.round(90 + norm * 110);
+      return `rgba(${v},${v},${v},${0.25 + norm * 0.7})`;
+    }
+    const v = Math.round(22 + norm * 60);
+    return `rgba(${v},${v},${v},${0.12 + norm * 0.35})`;
+  }
+
+  if (themeName === "cinnabar") {
+    if (alive) {
+      if (cellAge <= 1) return "#fff2e0";
+      const r = Math.round(255);
+      const g = Math.round(80 + norm * 120);
+      const b = Math.round(40 + norm * 40);
+      return `rgb(${r},${g},${b})`;
+    }
+    if (norm > 0.25) {
+      const r = Math.round(210 * norm + 30);
+      const g = Math.round(40 * norm + 10);
+      return `rgba(${r},${g},20,${0.3 + norm * 0.65})`;
+    }
+    const v = Math.round(16 + norm * 55);
+    return `rgba(${v + 12},${v},${v},${0.15 + norm * 0.35})`;
+  }
+
+  return "#ffffff";
+}
+
+/**
+ * CELLULAR STATE TO GLYPH LUMINOSITY MAPPING
+ * Bridges Conway CA dynamics continuously into Yang Xiong's 81-step tetragram ramp
+ */
+function getGlyphRank(alive, cellAge, n, cellDecay, x, y) {
+  let lum = 0.0;
+
+  if (alive) {
+    if (cellAge <= 1) {
+      // Genesis / Birth: Maximum light (Centre U+1D306)
+      lum = 1.0;
+    } else {
+      // Thriving: Stability boost for 2 or 3 neighbors, entropic fracture with age
+      const stability = (n === 2 || n === 3) ? 0.22 : 0.04;
+      const crowdingPenalty = Math.max(0, n - 3) * 0.08;
+      const ageFracture = Math.min(30, cellAge) / 30.0 * 0.14; // Older cells fracture slightly into broken lines
+      lum = 0.76 + stability - crowdingPenalty - ageFracture;
+    }
+  } else {
+    // Latent womb / field resonance: cells with 2 or 3 neighbors hum with reproductive anticipation
+    let latent = 0.0;
+    if (n === 3) latent = 0.52; // Imminent conception!
+    else if (n === 2) latent = 0.24;
+    else if (n === 1) latent = 0.08;
+
+    // Dissolving death trail (phosphorescent afterlife)
+    const decayGlow = cellDecay * 0.50;
+    lum = Math.max(latent, decayGlow);
+  }
+
+  // Bayer Dither to avoid banding across homogeneous fields
+  const dither = (BAYER4[y & 3][x & 3] - 7.5) / 16.0 * 0.045;
+  const clampedLum = Math.max(0.0, Math.min(1.0, lum + dither));
+
+  return Math.max(0, Math.min(80, Math.round((1.0 - clampedLum) * 80)));
+}
+
+/**
+ * VIEWPORT TRANSFORM ENGINE (INFINITE VECTOR CANVAS)
+ */
+const canvas = document.getElementById("viewport");
+const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+
+let dpr = window.devicePixelRatio || 1;
+let panX = 0;
+let panY = 0;
+let scale = 16.0;
+const MIN_SCALE = 3.5;
+const MAX_SCALE = 160.0;
+
+let lastFrameTime = 0;
+let simAccumulator = 0;
+let frameCount = 0;
+let lastFpsUpdate = 0;
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  drawRamp();
+}
+window.addEventListener("resize", () => { resize(); fitGrid(); });
+
+function screenToWorld(sx, sy) {
+  const physX = sx * dpr;
+  const physY = sy * dpr;
+  const physCell = scale * dpr;
+  const wx = Math.floor((physX - panX) / physCell);
+  const wy = Math.floor((physY - panY) / physCell);
+  return [wx, wy];
+}
+
+function zoomAround(anchorSx, anchorSy, factor) {
+  const physX = anchorSx * dpr;
+  const physY = anchorSy * dpr;
+  const oldScale = scale;
+  scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
+  const ratio = scale / oldScale;
+  panX = physX - (physX - panX) * ratio;
+  panY = physY - (physY - panY) * ratio;
+  document.getElementById("stat-zoom").textContent = Math.round((scale / 16) * 100) + "%";
+}
+
+function fitGrid() {
+  const physW = canvas.width;
+  const physH = canvas.height;
+  const scaleX = (physW * 0.90) / (COLS * dpr);
+  const scaleY = (physH * 0.78) / (ROWS * dpr);
+  scale = Math.max(MIN_SCALE, Math.min(scaleX, scaleY));
+  const worldW = COLS * scale * dpr;
+  const worldH = ROWS * scale * dpr;
+  panX = (physW - worldW) / 2;
+  panY = (physH - worldH) / 2;
+  document.getElementById("stat-zoom").textContent = Math.round((scale / 16) * 100) + "%";
+}
+
+/**
+ * SIMULATION ENGINE (CONWAY & GENERALIZED CELLULAR AUTOMATA)
+ */
+function computeNeighbors() {
+  for (let y = 0; y < ROWS; y++) {
+    const yU = (y === 0) ? (wrap ? ROWS - 1 : -1) : y - 1;
+    const yD = (y === ROWS - 1) ? (wrap ? 0 : -1) : y + 1;
+    const rowIdx = y * COLS;
+    const rowU = yU !== -1 ? yU * COLS : -1;
+    const rowD = yD !== -1 ? yD * COLS : -1;
+
+    for (let x = 0; x < COLS; x++) {
+      const xL = (x === 0) ? (wrap ? COLS - 1 : -1) : x - 1;
+      const xR = (x === COLS - 1) ? (wrap ? 0 : -1) : x + 1;
+      let count = 0;
+
+      if (rowU !== -1) {
+        if (xL !== -1) count += grid[rowU + xL];
+        count += grid[rowU + x];
+        if (xR !== -1) count += grid[rowU + xR];
+      }
+      if (xL !== -1) count += grid[rowIdx + xL];
+      if (xR !== -1) count += grid[rowIdx + xR];
+      if (rowD !== -1) {
+        if (xL !== -1) count += grid[rowD + xL];
+        count += grid[rowD + x];
+        if (xR !== -1) count += grid[rowD + xR];
+      }
+      nbrs[rowIdx + x] = count;
+    }
+  }
+}
+
+function stepSimulation() {
+  computeNeighbors();
+  let nextPop = 0;
+  let births = 0;
+
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const alive = grid[i];
+    const n = nbrs[i];
+    let survive = false;
+    let birth = false;
+
+    switch (currentRule) {
+      case "highlife":
+        survive = alive && (n === 2 || n === 3);
+        birth = !alive && (n === 3 || n === 6);
+        break;
+      case "seeds":
+        survive = false;
+        birth = !alive && (n === 2);
+        break;
+      case "daynight":
+        survive = alive && (n === 3 || n === 4 || n === 6 || n === 7 || n === 8);
+        birth = !alive && (n === 3 || n === 6 || n === 7 || n === 8);
+        break;
+      case "crystallize":
+        survive = alive;
+        birth = !alive && (n === 3);
+        break;
+      case "b3s23":
+      default:
+        survive = alive && (n === 2 || n === 3);
+        birth = !alive && (n === 3);
+        break;
+    }
+
+    if (birth) {
+      gridNext[i] = 1;
+      age[i] = 1;
+      decay[i] = 1.0;
+      nextPop++;
+      births++;
+    } else if (survive) {
+      gridNext[i] = 1;
+      age[i] = Math.min(500, age[i] + 1);
+      decay[i] = 1.0;
+      nextPop++;
+    } else {
+      gridNext[i] = 0;
+      age[i] = 0;
+      decay[i] = Math.max(0.0, decay[i] * 0.88 - 0.008);
+    }
+  }
+
+  const tmp = grid;
+  grid = gridNext;
+  gridNext = tmp;
+
+  popCount = nextPop;
+  genCount++;
+
+  document.getElementById("stat-gen").textContent = genCount.toLocaleString();
+  document.getElementById("stat-pop").textContent = popCount.toLocaleString();
+
+  if (births > 0 && Math.random() < 0.35) {
+    audio.playCellChime(Math.floor(Math.random() * 20));
+  }
+}
+
+/**
+ * MAIN RENDER PIPELINE
+ */
+function render() {
+  const physW = canvas.width;
+  const physH = canvas.height;
+  const physCell = Math.floor(scale * dpr);
+
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--bg-void") || "#05070b";
+  ctx.fillRect(0, 0, physW, physH);
+
+  if (physCell <= 0) return;
+
+  const minX = Math.max(0, Math.floor(-panX / physCell));
+  const maxX = Math.min(COLS, Math.ceil((physW - panX) / physCell));
+  const minY = Math.max(0, Math.floor(-panY / physCell));
+  const maxY = Math.min(ROWS, Math.ceil((physH - panY) / physCell));
+
+  computeNeighbors();
+
+  // Enable atlas caching down to 2px cells so dense zoomed-out views maintain a solid 60 FPS
+  const useAtlas = physCell >= 2 && physCell <= 64;
+  if (useAtlas) {
+    atlas.build(physCell, currentTheme);
+  }
+
+  for (let y = minY; y < maxY; y++) {
+    const py = Math.floor(panY + y * physCell);
+    const rowIdx = y * COLS;
+
+    for (let x = minX; x < maxX; x++) {
+      const px = Math.floor(panX + x * physCell);
+      const idx = rowIdx + x;
+      const isAlive = grid[idx];
+      const rank = getGlyphRank(isAlive, age[idx], nbrs[idx], decay[idx], x, y);
+      const code = ORDER[rank];
+
+      if (useAtlas) {
+        ctx.drawImage(
+          atlas.canvas,
+          rank * physCell, 0, physCell, physCell,
+          px, py, physCell, physCell
+        );
+      } else {
+        const color = getStyleForRank(rank, isAlive, age[idx], currentTheme);
+        drawVectorTetragram(ctx, code, px, py, physCell, color);
+      }
+    }
+  }
+
+  // Draw Grid Boundary Accent
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(panX, panY, COLS * physCell, ROWS * physCell);
+}
+
+function loop(timestamp) {
+  if (!lastFrameTime) lastFrameTime = timestamp;
+  const dt = (timestamp - lastFrameTime) / 1000;
+  lastFrameTime = timestamp;
+
+  // FPS Counter
+  frameCount++;
+  if (timestamp - lastFpsUpdate >= 500) {
+    const fps = Math.round((frameCount * 1000) / (timestamp - lastFpsUpdate));
+    document.getElementById("stat-fps").textContent = fps + " FPS";
+    frameCount = 0;
+    lastFpsUpdate = timestamp;
+  }
+
+  if (isRunning) {
+    simAccumulator += dt;
+    const interval = 1.0 / simSpeed;
+    while (simAccumulator >= interval) {
+      stepSimulation();
+      simAccumulator -= interval;
+    }
+  }
+
+  render();
+  requestAnimationFrame(loop);
+}
+
+/**
+ * 81-TETRAGRAM LUMINANCE SPECTRUM PREVIEW
+ */
+const rampCanvas = document.getElementById("ramp-canvas");
+const rampCtx = rampCanvas.getContext("2d", { alpha: false });
+
+function drawRamp() {
+  const w = rampCanvas.parentElement.clientWidth;
+  const h = 26;
+  rampCanvas.width = w * dpr;
+  rampCanvas.height = h * dpr;
+
+  rampCtx.fillStyle = "#0c1018";
+  rampCtx.fillRect(0, 0, rampCanvas.width, rampCanvas.height);
+
+  const slotW = rampCanvas.width / 81;
+  for (let r = 0; r < 81; r++) {
+    const code = ORDER[r];
+    const color = getStyleForRank(r, false, 0, currentTheme);
+    drawVectorTetragram(rampCtx, code, r * slotW, 2, Math.min(slotW, rampCanvas.height - 4), color);
+  }
+}
+
+rampCanvas.addEventListener("pointerdown", (e) => {
+  const rect = rampCanvas.getBoundingClientRect();
+  const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const rank = Math.min(80, Math.floor(frac * 81));
+  const code = ORDER[rank];
+  updateInspectorWithCode(code, rank);
+  audio.playCellChime(rank, 0.1);
+});
+
+/**
+ * INTERACTIVE TOUCH & MOUSE ENGINE (BRESENHAM PAINTING, PINCH ZOOM)
+ */
+const activeTouches = new Map();
+let isPointerDown = false;
+let pointerButton = 0;
+let lastWorldX = null;
+let lastWorldY = null;
+let lastTouchMidX = 0;
+let lastTouchMidY = 0;
+let lastTouchDist = 0;
+
+function setCell(wx, wy, alive) {
+  if (wrap) {
+    wx = (wx % COLS + COLS) % COLS;
+    wy = (wy % ROWS + ROWS) % ROWS;
+  } else {
+    if (wx < 0 || wy < 0 || wx >= COLS || wy >= ROWS) return;
+  }
+  const idx = wy * COLS + wx;
+  grid[idx] = alive ? 1 : 0;
+  age[idx] = alive ? 1 : 0;
+  decay[idx] = alive ? 1.0 : 0.0;
+}
+
+function applyBrush(wx, wy, alive) {
+  const rad = brushRad - 1;
+  for (let dy = -rad; dy <= rad; dy++) {
+    for (let dx = -rad; dx <= rad; dx++) {
+      if (dx * dx + dy * dy <= rad * rad + rad) {
+        setCell(wx + dx, wy + dy, alive);
+      }
+    }
+  }
+}
+
+function traceBresenham(x0, y0, x1, y1, alive) {
+  const dx = Math.abs(x1 - x0);
+  const dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+
+  while (true) {
+    applyBrush(x0, y0, alive);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x0 += sx; }
+    if (e2 < dx) { err += dx; y0 += sy; }
+  }
+}
+
+function updateInspectorWithCode(code, rank) {
+  document.getElementById("insp-glyph").textContent = GLYPHS[code];
+  document.getElementById("insp-kanji").textContent = KANJI[code];
+  document.getElementById("insp-name").textContent = NAMES[code];
+  document.getElementById("insp-unicode").textContent = "U+" + (0x1D306 + code).toString(16).toUpperCase();
+  document.getElementById("insp-desc").textContent =
+    `Rank ${rank + 1}/81 · Void ${VOID_OF[code].toFixed(3)} · ${TRITS[code].join("")}`;
+}
+
+function updateInspectorAt(sx, sy) {
+  const [wx, wy] = screenToWorld(sx, sy);
+  if (wx < 0 || wy < 0 || wx >= COLS || wy >= ROWS) return;
+  const idx = wy * COLS + wx;
+  const rank = getGlyphRank(grid[idx], age[idx], nbrs[idx], decay[idx], wx, wy);
+  const code = ORDER[rank];
+  updateInspectorWithCode(code, rank);
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  audio.init();
+  canvas.setPointerCapture(e.pointerId);
+  activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (activeTouches.size === 1) {
+    isPointerDown = true;
+    pointerButton = e.button;
+
+    if (e.button === 1 || e.altKey || activeTool === "pan") {
+      document.body.classList.add("tool-pan-active");
+    } else {
+      const [wx, wy] = screenToWorld(e.clientX, e.clientY);
+      const isErase = (e.button === 2 || e.shiftKey || activeTool === "erase");
+      applyBrush(wx, wy, !isErase);
+      lastWorldX = wx;
+      lastWorldY = wy;
+      audio.playCellChime(isErase ? 70 : 10, 0.04);
+    }
+  } else if (activeTouches.size === 2) {
+    document.body.classList.add("tool-pan-active");
+    const pts = Array.from(activeTouches.values());
+    lastTouchMidX = (pts[0].x + pts[1].x) / 2;
+    lastTouchMidY = (pts[0].y + pts[1].y) / 2;
+    lastTouchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+  updateInspectorAt(e.clientX, e.clientY);
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+
+  if (activeTouches.has(e.pointerId)) {
+    activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  }
+
+  // Multi-Touch Pinch to Zoom & Two-Finger Pan
+  if (activeTouches.size === 2) {
+    const pts = Array.from(activeTouches.values());
+    const midX = (pts[0].x + pts[1].x) / 2;
+    const midY = (pts[0].y + pts[1].y) / 2;
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+
+    if (lastTouchDist > 0) {
+      const factor = dist / lastTouchDist;
+      zoomAround(midX, midY, factor);
+    }
+    panX += (midX - lastTouchMidX) * dpr;
+    panY += (midY - lastTouchMidY) * dpr;
+
+    lastTouchMidX = midX;
+    lastTouchMidY = midY;
+    lastTouchDist = dist;
+    return;
+  }
+
+  if (isPointerDown) {
+    if (pointerButton === 1 || e.altKey || activeTool === "pan") {
+      panX += e.movementX * dpr;
+      panY += e.movementY * dpr;
+    } else {
+      const isErase = (pointerButton === 2 || e.shiftKey || activeTool === "erase");
+      for (const cev of coalesced) {
+        const [wx, wy] = screenToWorld(cev.clientX, cev.clientY);
+        if (lastWorldX !== null && lastWorldY !== null) {
+          traceBresenham(lastWorldX, lastWorldY, wx, wy, !isErase);
+        } else {
+          applyBrush(wx, wy, !isErase);
+        }
+        lastWorldX = wx;
+        lastWorldY = wy;
+      }
+    }
+  }
+  updateInspectorAt(e.clientX, e.clientY);
+});
+
+function endPointer(e) {
+  activeTouches.delete(e.pointerId);
+  if (activeTouches.size === 0) {
+    isPointerDown = false;
+    lastWorldX = null;
+    lastWorldY = null;
+    document.body.classList.remove("tool-pan-active");
+  } else if (activeTouches.size === 1) {
+    const rem = Array.from(activeTouches.values())[0];
+    const [wx, wy] = screenToWorld(rem.x, rem.y);
+    lastWorldX = wx;
+    lastWorldY = wy;
+  }
+}
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const delta = (e.ctrlKey) ? -e.deltaY * 0.05 : -Math.sign(e.deltaY) * 0.16;
+  const factor = Math.exp(delta);
+  zoomAround(e.clientX, e.clientY, factor);
+  updateInspectorAt(e.clientX, e.clientY);
+}, { passive: false });
+
+/**
+ * CANONICAL PRESETS ARCHIVE
+ */
+const PRESETS = {
+  glider: [[1,0],[2,1],[0,2],[1,2],[2,2]],
+  gosper: [
+    [24,0],[22,1],[24,1],[12,2],[13,2],[20,2],[21,2],[34,2],[35,2],
+    [11,3],[15,3],[20,3],[21,3],[34,3],[35,3],[0,4],[1,4],[10,4],[16,4],
+    [20,4],[21,4],[0,5],[1,5],[10,5],[14,5],[16,5],[17,5],[22,5],[24,5],
+    [10,6],[16,6],[24,6],[11,7],[15,7],[12,8],[13,8]
+  ],
+  simkin: [
+    [0,0],[1,0],[7,0],[8,0],[0,1],[1,1],[7,1],[8,1],[4,3],[5,3],[4,4],[5,4],
+    [22,9],[26,9],[21,10],[27,10],[20,11],[27,11],[20,12],[24,12],[27,12],[28,12],
+    [20,13],[25,13],[21,14],[22,14],[31,14],[32,14],[31,15],[32,15]
+  ],
+  pulsar: [
+    [2,0],[3,0],[4,0],[8,0],[9,0],[10,0],[0,2],[5,2],[7,2],[12,2],
+    [0,3],[5,3],[7,3],[12,3],[0,4],[5,4],[7,4],[12,4],[2,5],[3,5],
+    [4,5],[8,5],[9,5],[10,5],[2,7],[3,7],[4,7],[8,7],[9,7],[10,7],
+    [0,8],[5,8],[7,8],[12,8],[0,9],[5,9],[7,9],[12,9],[0,10],[5,10],
+    [7,10],[12,10],[2,12],[3,12],[4,12],[8,12],[9,12],[10,12]
+  ],
+  pentadecathlon: [
+    [1,0],[2,0],[0,1],[3,1],[1,2],[2,2],[1,3],[2,3],[1,4],[2,4],[1,5],[2,5],
+    [0,6],[3,6],[1,7],[2,7],[1,8],[2,8],[1,9],[2,9]
+  ],
+  queenbee: [
+    [0,0],[1,0],[5,0],[6,0],[2,1],[4,1],[2,2],[4,2],[3,3],[2,4],[4,4],[2,5],[4,5],[0,6],[1,6],[5,6],[6,6]
+  ],
+  lwss: [
+    [1,0],[4,0],[0,1],[0,2],[4,2],[0,3],[1,3],[2,3],[3,3]
+  ],
+  acorn: [
+    [1,0],[3,1],[0,2],[1,2],[4,2],[5,2],[6,2]
+  ],
+  rpent: [
+    [1,0],[2,0],[0,1],[1,1],[1,2]
+  ],
+  diehard: [
+    [6,0],[0,1],[1,1],[1,2],[5,2],[6,2],[7,2]
+  ]
+};
+
+function loadPreset(name) {
+  const pts = PRESETS[name];
+  if (!pts) return;
+  grid.fill(0); age.fill(0); decay.fill(0);
+  genCount = 0;
+
+  let maxX = 0, maxY = 0;
+  for (const [px, py] of pts) {
+    if (px > maxX) maxX = px;
+    if (py > maxY) maxY = py;
+  }
+  const ox = Math.floor((COLS - maxX) / 2);
+  const oy = Math.floor((ROWS - maxY) / 2);
+
+  for (const [px, py] of pts) {
+    setCell(ox + px, oy + py, true);
+  }
+  document.getElementById("stat-gen").textContent = "0";
+}
+
+/**
+ * UI CONTROL BINDINGS & KEYBOARD ACCELERATORS
+ */
+const btnPlay = document.getElementById("btn-play");
+const simIndicator = document.getElementById("sim-indicator");
+
+function togglePlay() {
+  isRunning = !isRunning;
+  btnPlay.innerHTML = isRunning
+    ? `<svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor"><path d="M3 2h3v10H3zm5 0h3v10H8z"/></svg><span>Pause</span>`
+    : `<svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor"><path d="M3 2l9 5-9 5z"/></svg><span>Play</span>`;
+  btnPlay.classList.toggle("btn-accent", !isRunning);
+  btnPlay.classList.toggle("active", isRunning);
+  simIndicator.classList.toggle("paused", !isRunning);
+}
+btnPlay.addEventListener("click", togglePlay);
+
+document.getElementById("btn-step").addEventListener("click", () => {
+  if (isRunning) togglePlay();
+  stepSimulation();
+});
+
+document.getElementById("btn-clear").addEventListener("click", () => {
+  grid.fill(0); age.fill(0); decay.fill(0);
+  genCount = 0; popCount = 0;
+  document.getElementById("stat-gen").textContent = "0";
+  document.getElementById("stat-pop").textContent = "0";
+});
+
+document.getElementById("btn-random").addEventListener("click", () => {
+  genCount = 0;
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const alive = Math.random() < 0.22;
+    grid[i] = alive ? 1 : 0;
+    age[i] = alive ? Math.floor(Math.random() * 8) + 1 : 0;
+    decay[i] = alive ? 1.0 : 0.0;
+  }
+  document.getElementById("stat-gen").textContent = "0";
+});
+
+document.getElementById("btn-fit").addEventListener("click", fitGrid);
+
+const btnWrap = document.getElementById("btn-wrap");
+btnWrap.addEventListener("click", () => {
+  wrap = !wrap;
+  btnWrap.classList.toggle("active", wrap);
+});
+
+const toolDraw = document.getElementById("tool-draw");
+const toolErase = document.getElementById("tool-erase");
+const toolPan = document.getElementById("tool-pan");
+
+function selectTool(tool) {
+  activeTool = tool;
+  toolDraw.classList.toggle("active", tool === "draw");
+  toolErase.classList.toggle("active", tool === "erase");
+  toolPan.classList.toggle("active", tool === "pan");
+  document.body.classList.toggle("tool-pan", tool === "pan");
+}
+toolDraw.addEventListener("click", () => selectTool("draw"));
+toolErase.addEventListener("click", () => selectTool("erase"));
+toolPan.addEventListener("click", () => selectTool("pan"));
+
+document.getElementById("slider-speed").addEventListener("input", (e) => {
+  simSpeed = parseInt(e.target.value, 10);
+  document.getElementById("val-speed").textContent = simSpeed;
+});
+
+document.getElementById("slider-brush").addEventListener("input", (e) => {
+  brushRad = parseInt(e.target.value, 10);
+  document.getElementById("val-brush").textContent = brushRad;
+});
+
+document.getElementById("select-preset").addEventListener("change", (e) => {
+  loadPreset(e.target.value);
+  e.target.value = "";
+});
+
+document.getElementById("select-rule").addEventListener("change", (e) => {
+  currentRule = e.target.value;
+});
+
+document.getElementById("select-theme").addEventListener("change", (e) => {
+  currentTheme = e.target.value;
+  document.body.setAttribute("data-theme", currentTheme);
+  drawRamp();
+});
+
+const btnSound = document.getElementById("btn-sound");
+btnSound.addEventListener("click", () => {
+  audio.init();
+  audio.enabled = !audio.enabled;
+  btnSound.classList.toggle("muted", !audio.enabled);
+  btnSound.classList.toggle("active", audio.enabled);
+});
+
+// Global Keyboard Accelerators
+window.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.code === "Space") {
+    e.preventDefault();
+    togglePlay();
+  } else if (e.key === "." || e.key === "n" || e.key === "N") {
+    document.getElementById("btn-step").click();
+  } else if (e.key === "c" || e.key === "C") {
+    document.getElementById("btn-clear").click();
+  } else if (e.key === "r" || e.key === "R") {
+    document.getElementById("btn-random").click();
+  } else if (e.key === "f" || e.key === "F") {
+    fitGrid();
+  } else if (e.key === "d" || e.key === "D") {
+    selectTool("draw");
+  } else if (e.key === "e" || e.key === "E") {
+    selectTool("erase");
+  } else if (e.key === "p" || e.key === "P") {
+    selectTool("pan");
+  }
+});
+
+// Initial boot
+resize();
+fitGrid();
+loadPreset("gosper");
+drawRamp();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
